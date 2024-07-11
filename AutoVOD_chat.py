@@ -90,7 +90,27 @@ def replace_vars(c):
             if type(v) != str:
                 continue
             c[key] = c[key].replace(f"${k}", v)
-        
+            
+def startTwitchChatSub(config):
+    STREAMER_NAME = config.get('STREAMER_NAME')
+    TIME_DATE = config.get('TIME_DATE')
+    TIME_CLOCK = config.get('TIME_CLOCK')
+    pythonCmd = f"python -m twitch_chat_irc {STREAMER_NAME} -output ./chats/twitch/{STREAMER_NAME}_{TIME_DATE}_{TIME_CLOCK}.csv -sp"
+    cmd = f"pm2 start --name {STREAMER_NAME}_chat '{pythonCmd}'"
+    print(cmd)
+    os.system(cmd)
+            
+def startChatSub(config):
+    STREAM_SOURCE = config.get('STREAM_SOURCE')
+    STREAMER_NAME = config.get('STREAMER_NAME')
+    # Get running pm2 processes
+    pm2_processes = json.loads(run_command("pm2 jlist"))
+    pm2_names = [p['name'] for p in pm2_processes]
+    if f"{STREAMER_NAME}_chat" in pm2_names:
+        print(f"{current_time()} Chat subscription already running, skipping")
+        return
+    if STREAM_SOURCE == "twitch":
+        startTwitchChatSub(config)
 
 def main():
     # Constants
@@ -118,6 +138,9 @@ def main():
 
     orig_config = load_config(config_file)
     config = copy.deepcopy(orig_config)
+    config['STREAMER_NAME'] = streamer_name
+    config['TIME_DATE'] = datetime.now().strftime("%d-%m-%y")
+    config['TIME_CLOCK'] = datetime.now().strftime("%H-%M-%S")
     
     YT_SECRETS = "./secrets/" + YT_SECRETS
     YT_TOKEN = "./secrets/" + YT_TOKEN
@@ -128,6 +151,8 @@ def main():
     video_duration = config.get('VIDEO_DURATION', '00:00:00')
     split_video_duration = config.get('SPLIT_VIDEO_DURATION')
     api_url = config.get('API_URL')
+    
+    startChatSub(config)
 
     while True:
         config = copy.deepcopy(orig_config)
@@ -135,7 +160,7 @@ def main():
         config['TIME_DATE'] = datetime.now().strftime("%d-%m-%y")
         config['TIME_CLOCK'] = datetime.now().strftime("%H-%M-%S")
         replace_vars(config)
-        pprint(config)
+        #pprint(config)
         
         variables = ["VIDEO_TITLE", "VIDEO_PLAYLIST", "VIDEO_DESCRIPTION", "RCLONE_FILENAME", "RCLONE_DIR", "LOCAL_FILENAME"]
         original_values = {var: config.get(var) for var in variables}

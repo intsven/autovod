@@ -8,3 +8,5 @@ sample.mp4
 .vscode/*
 .nova/*
 secrets/
+chats/
+vods/
