@@ -5,10 +5,8 @@ import time
 from datetime import datetime
 import json
 import requests
-
-# Constants
-YT_SECRETS = 'client_secrets_autovod.json'
-YT_TOKEN = 'request_autovod.token'
+from pprint import pprint
+import copy
 
 def fetch_args():
     parser = argparse.ArgumentParser(description='Stream handler')
@@ -59,14 +57,48 @@ def load_config(config_file):
     config = {}
     with open(config_file) as f:
         for line in f:
-            if line.strip() and not line.startswith("#"):
+            if line.strip() and not line.startswith("#") and "=" in line:
                 key, value = line.strip().split("=", 1)
+                value = value.split('#')[0].strip()
+                if value.startswith('('):
+                    value = value.split('(')[1]
+                    value = value.split(')')[0]
+                    # Load list values
+                    value = value.split('"')[1::2]
+                else:
+                    value = value.split('"')
+                    for i, v in enumerate(value):
+                        if i % 2 == 1:
+                            value[i] = v.strip()
+                    value = "".join(value)
                 config[key] = value
     return config
 
+def replace_vars(c):
+    for key, value in c.items():
+        if type(value) != str:
+            continue
+        for k, v in c.items():
+            if k == key:
+                continue
+            if type(v) != str:
+                continue
+            c[key] = c[key].replace(f"$(${k})", v)
+        for k, v in c.items():
+            if k == key:
+                continue
+            if type(v) != str:
+                continue
+            c[key] = c[key].replace(f"${k}", v)
+        
+
 def main():
+    # Constants
+    YT_SECRETS = 'client_secrets_autovod.json'
+    YT_TOKEN = 'request_autovod.token'
     args = fetch_args()
     streamer_name = args.name
+    print(args)
 
     if not streamer_name and not os.path.exists("/.dockerenv"):
         print(f"{current_time()} Missing required argument: -n STREAMER_NAME")
@@ -77,12 +109,18 @@ def main():
 
     print(f"{current_time()} Selected streamer: {streamer_name}")
     config_file = f"{streamer_name}.config"
+    if not os.path.isfile(config_file):
+        config_file = f"configs/{streamer_name}.config"
 
     if not os.path.isfile(config_file):
         print(f"{current_time()} Config file is missing")
         exit(1)
 
-    config = load_config(config_file)
+    orig_config = load_config(config_file)
+    config = copy.deepcopy(orig_config)
+    
+    YT_SECRETS = "./secrets/" + YT_SECRETS
+    YT_TOKEN = "./secrets/" + YT_TOKEN
 
     stream_source = config.get('STREAM_SOURCE')
     stream_source_url = determine_source(stream_source, streamer_name)
@@ -92,6 +130,13 @@ def main():
     api_url = config.get('API_URL')
 
     while True:
+        config = copy.deepcopy(orig_config)
+        config['STREAMER_NAME'] = streamer_name
+        config['TIME_DATE'] = datetime.now().strftime("%d-%m-%y")
+        config['TIME_CLOCK'] = datetime.now().strftime("%H-%M-%S")
+        replace_vars(config)
+        pprint(config)
+        
         variables = ["VIDEO_TITLE", "VIDEO_PLAYLIST", "VIDEO_DESCRIPTION", "RCLONE_FILENAME", "RCLONE_DIR", "LOCAL_FILENAME"]
         original_values = {var: config.get(var) for var in variables}
 
@@ -117,15 +162,15 @@ def main():
             for var in ["VIDEO_TITLE", "RCLONE_FILENAME", "LOCAL_FILENAME"]:
                 value = config.get(var)
                 if value:
-                    value = f"{value} Part: {current_part}"
+                    value = f"{value} Part_{current_part}"
                     config[var] = value
 
         streamlink_options = f"{config.get('STREAMLINK_QUALITY')} --hls-duration {video_duration} -O --loglevel {config.get('STREAMLINK_LOGS')}"
-
+        streamlink_flags = " ".join(config.get('STREAMLINK_FLAGS'))
+        re_encode = config.get('RE_ENCODE')
+        
         upload_service = config.get('UPLOAD_SERVICE')
         if upload_service == "youtube":
-            YT_TOKEN = config.get('YT_TOKEN', YT_TOKEN)
-            YT_SECRETS = config.get('YT_SECRETS', YT_SECRETS)
             required_files = [YT_TOKEN, YT_SECRETS, config_file]
             if not all(os.path.isfile(file) for file in required_files):
                 print(f"{current_time()} One or more required files are missing")
@@ -141,7 +186,7 @@ def main():
             with open(input_file, 'w') as f:
                 json.dump(input_data, f)
 
-            command = f"streamlink {stream_source_url} {streamlink_options} | youtubeuploader -secrets {YT_SECRETS} -cache {YT_TOKEN} -metaJSON {input_file} -filename -"
+            command = f"streamlink {stream_source_url} {streamlink_options} {streamlink_flags} | youtubeuploader -secrets {YT_SECRETS} -cache {YT_TOKEN} -metaJSON {input_file} -filename -"
             if subprocess.run(command, shell=True).returncode != 0:
                 print(f"{current_time()} youtubeuploader failed uploading the stream")
             else:
@@ -150,11 +195,10 @@ def main():
 
         elif upload_service == "rclone":
             temp_file = run_command('mktemp stream.XXXXXX')
-            re_encode = config.get('RE_ENCODE')
             if re_encode == "true":
-                command = f"streamlink {stream_source_url} {streamlink_options} --stdout | ffmpeg -i pipe:0 -c:v {config.get('RE_ENCODE_CODEC')} -crf {config.get('RE_ENCODE_CRF')} -preset {config.get('RE_ECODE_PRESET')} -hide_banner -loglevel {config.get('RE_ENCODE_LOG')} -f matroska {temp_file}"
+                command = f"streamlink {stream_source_url} {streamlink_options} {streamlink_flags}--stdout | ffmpeg -i pipe:0 -c:v {config.get('RE_ENCODE_CODEC')} -crf {config.get('RE_ENCODE_CRF')} -preset {config.get('RE_ECODE_PRESET')} -hide_banner -loglevel {config.get('RE_ENCODE_LOG')} -f matroska {temp_file}"
             else:
-                command = f"streamlink {stream_source_url} {streamlink_options} -o - > {temp_file}"
+                command = f"streamlink {stream_source_url} {streamlink_options} {streamlink_flags} -o - > {temp_file}"
             if subprocess.run(command, shell=True).returncode != 0:
                 print(f"{current_time()} streamlink or ffmpeg failed")
             else:
@@ -180,7 +224,7 @@ def main():
         elif upload_service == "restream":
             rtmps_url = config.get('RTMPS_URL')
             rtmps_stream_key = config.get('RTMPS_STREAM_KEY')
-            command = f"streamlink {stream_source_url} {streamlink_options} -O | ffmpeg -re -i - -ar {config.get('AUDIO_BITRATE')} -acodec {config.get('AUDIO_CODEC')} -vcodec copy -f {config.get('FILE_FORMAT')} {rtmps_url}{rtmps_stream_key}"
+            command = f"streamlink {stream_source_url} {streamlink_options} {streamlink_flags} -O | ffmpeg -re -i - -ar {config.get('AUDIO_BITRATE')} -acodec {config.get('AUDIO_CODEC')} -vcodec copy -f {config.get('FILE_FORMAT')} {rtmps_url}{rtmps_stream_key}"
             if subprocess.run(command, shell=True).returncode != 0:
                 print(f"{current_time()} ffmpeg failed re-streaming the stream")
             else:
@@ -191,9 +235,10 @@ def main():
             local_filename = config.get('LOCAL_FILENAME')
             local_extension = config.get('LOCAL_EXTENSION')
             if re_encode == "true":
-                command = f"streamlink {stream_source_url} {streamlink_options} --stdout | ffmpeg -i pipe:0 -c:v {config.get('RE_ENCODE_CODEC')} -crf {config.get('RE_ENCODE_CRF')} -preset {config.get('RE_ECODE_PRESET')} -hide_banner -loglevel {config.get('RE_ENCODE_LOG')} -f matroska {local_filename}"
+                command = f"streamlink {stream_source_url} {streamlink_options} {streamlink_flags} --stdout | ffmpeg -i pipe:0 -c:v {config.get('RE_ENCODE_CODEC')} -crf {config.get('RE_ENCODE_CRF')} -preset {config.get('RE_ECODE_PRESET')} -hide_banner -loglevel {config.get('RE_ENCODE_LOG')} -f matroska {local_filename}"
             else:
-                command = f"streamlink {stream_source_url} {streamlink_options} -o - > {local_filename}.{local_extension}"
+                command = f"streamlink {stream_source_url} {streamlink_options} {streamlink_flags} -o - > '{local_filename}.{local_extension}'"
+            print(command)
             if subprocess.run(command, shell=True).returncode != 0:
                 print(f"{current_time()} streamlink or ffmpeg failed saving the stream to disk")
                 if config.get('SAVE_ON_FAIL') == "true":
