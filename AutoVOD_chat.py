@@ -99,7 +99,13 @@ def startTwitchChatSub(config):
     cmd = f"pm2 start --name {STREAMER_NAME}_chat '{pythonCmd}'"
     print(cmd)
     os.system(cmd)
-            
+    
+def startDestinyChatSub(config):
+    pythonCmd = f"python wsChat.py"
+    cmd = f"pm2 start --name destiny_chat '{pythonCmd}'"
+    print(cmd)
+    os.system(cmd)
+
 def startChatSub(config):
     STREAM_SOURCE = config.get('STREAM_SOURCE')
     STREAMER_NAME = config.get('STREAMER_NAME')
@@ -111,14 +117,18 @@ def startChatSub(config):
         return
     if STREAM_SOURCE == "twitch":
         startTwitchChatSub(config)
+    elif STREAMER_NAME == "destiny":
+        startDestinyChatSub(config)
 
 def main():
     # Constants
     YT_SECRETS = 'client_secrets_autovod.json'
     YT_TOKEN = 'request_autovod.token'
-    args = fetch_args()
-    streamer_name = args.name
-    print(args)
+    #args = fetch_args()
+    #OPTARG = os.getenv('OPTARG')
+    #print(f"{current_time()} OPTARG: {OPTARG}")
+    streamer_name = os.getenv('name')
+    #print(args)
 
     if not streamer_name and not os.path.exists("/.dockerenv"):
         print(f"{current_time()} Missing required argument: -n STREAMER_NAME")
