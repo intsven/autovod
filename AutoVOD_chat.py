@@ -106,6 +106,13 @@ def startDestinyChatSub(config):
     print(cmd)
     os.system(cmd)
 
+def startKickChatSub(config):
+    STREAMER_NAME = config.get('STREAMER_NAME')
+    pythonCmd = f"python kickChat.py {STREAMER_NAME}"
+    cmd = f"pm2 start --name {STREAMER_NAME}_chat '{pythonCmd}'"
+    print(cmd)
+    os.system(cmd)
+
 def startChatSub(config):
     STREAM_SOURCE = config.get('STREAM_SOURCE')
     STREAMER_NAME = config.get('STREAMER_NAME')
@@ -119,6 +126,8 @@ def startChatSub(config):
         startTwitchChatSub(config)
     elif STREAMER_NAME == "destiny":
         startDestinyChatSub(config)
+    elif STREAM_SOURCE == "kick":
+        startKickChatSub(config)
 
 def main():
     # Constants
