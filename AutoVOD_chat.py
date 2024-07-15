@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import argparse
 import os
 import subprocess
@@ -161,6 +162,11 @@ def main():
     config['TIME_DATE'] = datetime.now().strftime("%d-%m-%y")
     config['TIME_CLOCK'] = datetime.now().strftime("%H-%M-%S")
     
+    if "YT_SECRETS" in config:
+        YT_SECRETS = config.get('YT_SECRETS')
+    if "YT_TOKEN" in config:
+        YT_TOKEN = config.get('YT_TOKEN')
+    
     YT_SECRETS = "./secrets/" + YT_SECRETS
     YT_TOKEN = "./secrets/" + YT_TOKEN
 
@@ -169,6 +175,7 @@ def main():
 
     video_duration = config.get('VIDEO_DURATION', '00:00:00')
     split_video_duration = config.get('SPLIT_VIDEO_DURATION')
+    split_into_parts = config.get('SPLIT_INTO_PARTS')
     api_url = config.get('API_URL')
     
     startChatSub(config)
@@ -196,7 +203,7 @@ def main():
                             value = value.replace("$STREAMER_TITLE", fetched_title).replace("$STREAMER_GAME", fetched_game)
                             config[var] = value
 
-        if split_video_duration:
+        if split_into_parts == "true":
             video_duration = split_video_duration
             if datetime.now().strftime("%d-%m-%y") == config.get('TIME_DATE_CHECK'):
                 current_part = int(config.get('CURRENT_PART', 1)) + 1
