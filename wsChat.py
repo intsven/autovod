@@ -9,7 +9,10 @@ async def main(filename="./chats/destiny.txt", ws_url='wss://chat.destiny.gg/ws'
             print(f"Error: {e}")
 
 async def _main(filename, ws_url):
-    file = open(filename, "a")
+    with open(filename, "a") as file:
+        await connectToWS(file, ws_url)
+
+async def connectToWS(file, ws_url):
     async with websockets.connect(ws_url, ping_interval=None) as websocket:
         #await websocket.send('Hello, World!')
         while True:
@@ -18,7 +21,6 @@ async def _main(filename, ws_url):
             file.write(response)
             file.write("\n")
             #file.flush()
-    file.close()
 
 if __name__ == '__main__':
     asyncio.run(main())
